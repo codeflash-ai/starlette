@@ -477,6 +477,7 @@ class Host(BaseRoute):
         self.app = app
         self.name = name
         self.host_regex, self.host_format, self.param_convertors = compile_path(host)
+        self._host_regex_match = self.host_regex.match  # Cache bound method for very hot loop
 
     @property
     def routes(self) -> list[BaseRoute]:
@@ -484,17 +485,41 @@ class Host(BaseRoute):
 
     def matches(self, scope: Scope) -> tuple[Match, Scope]:
         if scope["type"] in ("http", "websocket"):  # pragma:no branch
-            headers = Headers(scope=scope)
-            host = headers.get("host", "").split(":")[0]
-            match = self.host_regex.match(host)
+            # Avoid Headers object except for rare scenario: extract the host header more quickly
+            # This is safe: the Headers object is only used for get(). We can use raw scope access.
+            # If scope["headers"] is present, this is: list[tuple[bytes, bytes]].
+            # Typical keys are lowercased ASCII bytes.
+            headers = scope.get("headers", ())
+            host = ""
+            # The loop here is much faster than Headers.__getitem__ for very hot path.
+            # Microbenchmark: look for b"host" in headers
+            for k, v in headers:
+                if k == b"host":
+                    # Per HTTP spec, headers are latin1-encoded, not utf-8.
+                    host = v.decode("latin1").split(":", 1)[0]
+                    break
+            else:
+                # Fallback: legacy Headers object (should almost never occur)
+                host = Headers(scope=scope).get("host", "").split(":", 1)[0]
+
+            match = self._host_regex_match(host)
             if match:
                 matched_params = match.groupdict()
-                for key, value in matched_params.items():
-                    matched_params[key] = self.param_convertors[key].convert(value)
-                path_params = dict(scope.get("path_params", {}))
-                path_params.update(matched_params)
-                child_scope = {"path_params": path_params, "endpoint": self.app}
-                return Match.FULL, child_scope
+                # Use local cache for frequently accessed attr
+                convertors = self.param_convertors
+                # Use list of keys to avoid items() and dict assignment overhead
+                # Since matched_params and convertors dicts tend to be small, use a list for speed
+                for key in matched_params:
+                    matched_params[key] = convertors[key].convert(matched_params[key])
+                # Use dict comprehension for updating path_params to avoid unnecessary dict() copy
+                path_params = scope.get("path_params")
+                if path_params:
+                    # Fast copy and update (more efficient than dict() + update())
+                    path_params = {**path_params, **matched_params}
+                else:
+                    path_params = matched_params
+                # Avoid use of intermediate variable for child_scope
+                return Match.FULL, {"path_params": path_params, "endpoint": self.app}
         return Match.NONE, {}
 
     def url_path_for(self, name: str, /, **path_params: Any) -> URLPath:
