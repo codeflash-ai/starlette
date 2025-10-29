@@ -129,11 +129,12 @@ class Config:
         if cast is None or value is None:
             return value
         elif cast is bool and isinstance(value, str):
-            mapping = {"true": True, "1": True, "false": False, "0": False}
             value = value.lower()
-            if value not in mapping:
-                raise ValueError(f"Config '{key}' has value '{value}'. Not a valid bool.")
-            return mapping[value]
+            if value == "true" or value == "1":
+                return True
+            elif value == "false" or value == "0":
+                return False
+            raise ValueError(f"Config '{key}' has value '{value}'. Not a valid bool.")
         try:
             return cast(value)
         except (TypeError, ValueError):
