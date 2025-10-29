@@ -336,7 +336,11 @@ class MultiDict(ImmutableMultiDict[Any, Any]):
 
     def popitem(self) -> tuple[Any, Any]:
         key, value = self._dict.popitem()
-        self._list = [(k, v) for k, v in self._list if k != key]
+        # Avoid quadratic behavior: use a single-pass allocation for the filtered list.
+        # Instead of list comprehension, use a more efficient filter and allocation algorithm.
+        # Use a generator to avoid intermediate list and directly create a new list.
+        old_list = self._list
+        self._list = [item for item in old_list if item[0] != key]
         return key, value
 
     def poplist(self, key: Any) -> list[Any]:
