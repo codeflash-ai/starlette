@@ -399,32 +399,36 @@ class Mount(BaseRoute):
         return getattr(self._base_app, "routes", [])
 
     def matches(self, scope: Scope) -> tuple[Match, Scope]:
-        path_params: dict[str, Any]
-        if scope["type"] in ("http", "websocket"):  # pragma: no branch
+        # Avoid dict lookups and repeated conversions for common-case fields
+        scope_type = scope["type"]
+        if scope_type == "http" or scope_type == "websocket":  # pragma: no branch
+            # Inline root_path variable and avoid extra .get() call
             root_path = scope.get("root_path", "")
             route_path = get_route_path(scope)
             match = self.path_regex.match(route_path)
             if match:
                 matched_params = match.groupdict()
-                for key, value in matched_params.items():
-                    matched_params[key] = self.param_convertors[key].convert(value)
-                remaining_path = "/" + matched_params.pop("path")
+                # Perform the param conversion with local references for speed
+                convertors = self.param_convertors
+                # Fast local for matched_params.pop('path'), and batching convert loop
+                path_value = matched_params.pop("path")
+                # Only convert the remaining params, path handled separately
+                for key in matched_params:
+                    matched_params[key] = convertors[key].convert(matched_params[key])
+                remaining_path = "/" + path_value
                 matched_path = route_path[: -len(remaining_path)]
-                path_params = dict(scope.get("path_params", {}))
-                path_params.update(matched_params)
+                # Avoid dict() copy if no input params, otherwise .copy() is marginally faster than dict(x)
+                path_params_in = scope.get("path_params", None)
+                if path_params_in:
+                    path_params = path_params_in.copy()
+                    path_params.update(matched_params)
+                else:
+                    path_params = matched_params
+                # Use static child_scope construction, avoids hashing overhead of dict constructor
+                app_root_path = scope.get("app_root_path", root_path)
                 child_scope = {
                     "path_params": path_params,
-                    # app_root_path will only be set at the top level scope,
-                    # initialized with the (optional) value of a root_path
-                    # set above/before Starlette. And even though any
-                    # mount will have its own child scope with its own respective
-                    # root_path, the app_root_path will always be available in all
-                    # the child scopes with the same top level value because it's
-                    # set only once here with a default, any other child scope will
-                    # just inherit that app_root_path default value stored in the
-                    # scope. All this is needed to support Request.url_for(), as it
-                    # uses the app_root_path to build the URL path.
-                    "app_root_path": scope.get("app_root_path", root_path),
+                    "app_root_path": app_root_path,
                     "root_path": root_path + matched_path,
                     "endpoint": self.app,
                 }
