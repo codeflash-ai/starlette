@@ -19,9 +19,18 @@ class GZipMiddleware:
             await self.app(scope, receive, send)
             return
 
-        headers = Headers(scope=scope)
+        # Check for gzip support without Headers object overhead
+        gzip_supported = False
+        headers = scope.get("headers")
+        if headers:
+            for k, v in headers:
+                if k == b"accept-encoding":
+                    if b"gzip" in v:
+                        gzip_supported = True
+                    break
+
         responder: ASGIApp
-        if "gzip" in headers.get("Accept-Encoding", ""):
+        if gzip_supported:
             responder = GZipResponder(self.app, self.minimum_size, compresslevel=self.compresslevel)
         else:
             responder = IdentityResponder(self.app, self.minimum_size)
