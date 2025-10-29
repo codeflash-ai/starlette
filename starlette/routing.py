@@ -243,7 +243,9 @@ class Route(BaseRoute):
         if methods is None:
             self.methods = None
         else:
-            self.methods = {method.upper() for method in methods}
+            self.methods = set()
+            for method in methods:
+                self.methods.add(method.upper())
             if "GET" in self.methods:
                 self.methods.add("HEAD")
 
@@ -252,14 +254,26 @@ class Route(BaseRoute):
     def matches(self, scope: Scope) -> tuple[Match, Scope]:
         path_params: dict[str, Any]
         if scope["type"] == "http":
-            route_path = get_route_path(scope)
+            path = scope.get("path", None)
+            root_path = scope.get("root_path", "")
+            if path is None:
+                route_path = get_route_path(scope)
+            elif not root_path:
+                route_path = path
+            else:
+                route_path = get_route_path(scope)
+
             match = self.path_regex.match(route_path)
             if match:
                 matched_params = match.groupdict()
-                for key, value in matched_params.items():
-                    matched_params[key] = self.param_convertors[key].convert(value)
-                path_params = dict(scope.get("path_params", {}))
-                path_params.update(matched_params)
+                for key in matched_params:
+                    matched_params[key] = self.param_convertors[key].convert(matched_params[key])
+                path_params = scope.get("path_params")
+                if path_params:
+                    path_params = dict(path_params)
+                    path_params.update(matched_params)
+                else:
+                    path_params = matched_params
                 child_scope = {"endpoint": self.endpoint, "path_params": path_params}
                 if self.methods and scope["method"] not in self.methods:
                     return Match.PARTIAL, child_scope
