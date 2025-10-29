@@ -10,6 +10,13 @@ from __future__ import annotations
 
 import warnings
 
+_deprecation_changes = {
+    "HTTP_413_REQUEST_ENTITY_TOO_LARGE": "HTTP_413_CONTENT_TOO_LARGE",
+    "HTTP_414_REQUEST_URI_TOO_LONG": "HTTP_414_URI_TOO_LONG",
+    "HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE": "HTTP_416_RANGE_NOT_SATISFIABLE",
+    "HTTP_422_UNPROCESSABLE_ENTITY": "HTTP_422_UNPROCESSABLE_CONTENT",
+}
+
 __all__ = [
     "HTTP_100_CONTINUE",
     "HTTP_101_SWITCHING_PROTOCOLS",
@@ -186,17 +193,10 @@ __deprecated__ = {
 
 
 def __getattr__(name: str) -> int:
-    deprecation_changes = {
-        "HTTP_413_REQUEST_ENTITY_TOO_LARGE": "HTTP_413_CONTENT_TOO_LARGE",
-        "HTTP_414_REQUEST_URI_TOO_LONG": "HTTP_414_URI_TOO_LONG",
-        "HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE": "HTTP_416_RANGE_NOT_SATISFIABLE",
-        "HTTP_422_UNPROCESSABLE_ENTITY": "HTTP_422_UNPROCESSABLE_CONTENT",
-    }
-
-    deprecated = __deprecated__.get(name)
-    if deprecated:
+    # Use direct lookup in __deprecated__ to avoid creating local deprecated dict
+    if (deprecated := __deprecated__.get(name)) is not None:
         warnings.warn(
-            f"'{name}' is deprecated. Use '{deprecation_changes[name]}' instead.",
+            f"'{name}' is deprecated. Use '{_deprecation_changes[name]}' instead.",
             category=DeprecationWarning,
             stacklevel=3,
         )
