@@ -246,8 +246,7 @@ class CommaSeparatedStrings(Sequence[str]):
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
-        items = [item for item in self]
-        return f"{class_name}({items!r})"
+        return f"{class_name}({self._items!r})"
 
     def __str__(self) -> str:
         return ", ".join(repr(item) for item in self)
