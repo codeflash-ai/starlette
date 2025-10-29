@@ -349,10 +349,16 @@ class MultiDict(ImmutableMultiDict[Any, Any]):
         self._list.clear()
 
     def setdefault(self, key: Any, default: Any = None) -> Any:
-        if key not in self:
-            self._dict[key] = default
+        # Try to access self._dict directly for improved lookup performance
+        # (preserving behavior since ImmutableMultiDict.__getitem__ and __contains__ both delegate to self._dict)
+        _dict = self._dict  # local variable lookup optimization
+
+        if key not in _dict:
+            _dict[key] = default
             self._list.append((key, default))
 
+        # Access dict directly for the return path to avoid double lookup
+        # (but must still support subclass overrides, so use self[key] as in original)
         return self[key]
 
     def setlist(self, key: Any, values: list[Any]) -> None:
@@ -571,8 +577,19 @@ class Headers(Mapping[str, str]):
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
-        as_dict = dict(self.items())
-        if len(as_dict) == len(self):
+        # Avoid repeated decode operations and dict creation when possible:
+        # Build the dict directly using local variable assignment for decode methods for speed
+        key_decode = bytes.decode
+        value_decode = bytes.decode
+        as_dict_len = len(self._list)
+        as_dict = {}
+        for key, value in self._list:
+            s_key = key_decode(key, "latin-1")
+            # Only the first occurrence is used
+            if s_key not in as_dict:
+                as_dict[s_key] = value_decode(value, "latin-1")
+
+        if len(as_dict) == as_dict_len:
             return f"{class_name}({as_dict!r})"
         return f"{class_name}(raw={self.raw!r})"
 
