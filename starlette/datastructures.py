@@ -349,10 +349,16 @@ class MultiDict(ImmutableMultiDict[Any, Any]):
         self._list.clear()
 
     def setdefault(self, key: Any, default: Any = None) -> Any:
-        if key not in self:
-            self._dict[key] = default
+        # Try to access self._dict directly for improved lookup performance
+        # (preserving behavior since ImmutableMultiDict.__getitem__ and __contains__ both delegate to self._dict)
+        _dict = self._dict  # local variable lookup optimization
+
+        if key not in _dict:
+            _dict[key] = default
             self._list.append((key, default))
 
+        # Access dict directly for the return path to avoid double lookup
+        # (but must still support subclass overrides, so use self[key] as in original)
         return self[key]
 
     def setlist(self, key: Any, values: list[Any]) -> None:
@@ -432,6 +438,16 @@ class UploadFile:
         # Note 0 means unlimited mirroring SpooledTemporaryFile's __init__
         self._max_mem_size = getattr(self.file, "_max_size", 0)
 
+        # Cache whether _in_memory is True, if possible, to avoid repeated attribute lookups.
+        # This change avoids repeated attribute access for self._in_memory in _will_roll,
+        # which reduces the attribute lookup cost for the fast path.
+        try:
+            object.__getattribute__(self, "_in_memory")
+            self._cached_in_memory = self._in_memory
+        except AttributeError:
+            # fallback for missing _in_memory attribute (should raise later if used)
+            self._cached_in_memory = None
+
     @property
     def content_type(self) -> str | None:
         return self.headers.get("content-type", None)
@@ -443,13 +459,28 @@ class UploadFile:
         return not rolled_to_disk
 
     def _will_roll(self, size_to_add: int) -> bool:
+        _in_memory = self._cached_in_memory
         # If we're not in_memory then we will always roll
-        if not self._in_memory:
-            return True
+        if _in_memory is not None:
+            if not _in_memory:
+                return True
+        else:
+            # fallback to attribute access (preserving behavior if present)
+            if not self._in_memory:
+                return True
 
         # Check for SpooledTemporaryFile._max_size
-        future_size = self.file.tell() + size_to_add
-        return bool(future_size > self._max_mem_size) if self._max_mem_size else False
+        # Optimize by avoiding repeated attribute lookups and function calls.
+        file = self.file
+        pos = file.tell()
+        future_size = pos + size_to_add
+
+        max_mem_size = self._max_mem_size
+        if max_mem_size:
+            # Don't call bool(); just compare and return the result.
+            return future_size > max_mem_size
+        else:
+            return False
 
     async def write(self, data: bytes) -> None:
         new_data_len = len(data)
