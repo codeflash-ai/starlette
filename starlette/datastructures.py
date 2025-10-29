@@ -349,10 +349,16 @@ class MultiDict(ImmutableMultiDict[Any, Any]):
         self._list.clear()
 
     def setdefault(self, key: Any, default: Any = None) -> Any:
-        if key not in self:
-            self._dict[key] = default
+        # Try to access self._dict directly for improved lookup performance
+        # (preserving behavior since ImmutableMultiDict.__getitem__ and __contains__ both delegate to self._dict)
+        _dict = self._dict  # local variable lookup optimization
+
+        if key not in _dict:
+            _dict[key] = default
             self._list.append((key, default))
 
+        # Access dict directly for the return path to avoid double lookup
+        # (but must still support subclass overrides, so use self[key] as in original)
         return self[key]
 
     def setlist(self, key: Any, values: list[Any]) -> None:
@@ -682,11 +688,13 @@ class State:
         self._state[key] = value
 
     def __getattr__(self, key: Any) -> Any:
+        # Optimize exception handling: avoid repeated instance lookups
+        state = self._state
         try:
-            return self._state[key]
+            return state[key]
         except KeyError:
-            message = "'{}' object has no attribute '{}'"
-            raise AttributeError(message.format(self.__class__.__name__, key))
+            cls_name = type(self).__name__
+            raise AttributeError(f"'{cls_name}' object has no attribute '{key}'")
 
     def __delattr__(self, key: Any) -> None:
         del self._state[key]
