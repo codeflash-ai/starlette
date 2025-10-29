@@ -92,6 +92,8 @@ class BaseSchemaGenerator:
             Route("/users/{id:int}", endpoint=get_user, methods=["GET"])
         Should be represented as `/users/{id}` in the OpenAPI schema.
         """
+        if "}" not in path:
+            return path
         return _remove_converter_pattern.sub("}", path)
 
     def parse_docstring(self, func_or_method: Callable[..., Any]) -> dict[str, Any]:
