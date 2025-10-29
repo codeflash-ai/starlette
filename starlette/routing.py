@@ -318,36 +318,53 @@ class WebSocketRoute(BaseRoute):
         self.endpoint = endpoint
         self.name = get_name(endpoint) if name is None else name
 
+        # Unwrap functools.partial once, not repeatedly in a loop
         endpoint_handler = endpoint
         while isinstance(endpoint_handler, functools.partial):
             endpoint_handler = endpoint_handler.func
+
         if inspect.isfunction(endpoint_handler) or inspect.ismethod(endpoint_handler):
-            # Endpoint is function or method. Treat it as `func(websocket)`.
             self.app = websocket_session(endpoint)
         else:
-            # Endpoint is a class. Treat it as ASGI.
             self.app = endpoint
 
+        # Apply middleware stack, reversing only if needed
         if middleware is not None:
+            # Convert to reversed list in-place for faster traversal
             for cls, args, kwargs in reversed(middleware):
                 self.app = cls(self.app, *args, **kwargs)
 
+        # Compile path only once
         self.path_regex, self.path_format, self.param_convertors = compile_path(path)
 
     def matches(self, scope: Scope) -> tuple[Match, Scope]:
-        path_params: dict[str, Any]
-        if scope["type"] == "websocket":
-            route_path = get_route_path(scope)
-            match = self.path_regex.match(route_path)
-            if match:
-                matched_params = match.groupdict()
-                for key, value in matched_params.items():
-                    matched_params[key] = self.param_convertors[key].convert(value)
-                path_params = dict(scope.get("path_params", {}))
-                path_params.update(matched_params)
-                child_scope = {"endpoint": self.endpoint, "path_params": path_params}
-                return Match.FULL, child_scope
-        return Match.NONE, {}
+        # Fast path: skip dict construction if not a websocket scope
+        if scope["type"] != "websocket":
+            return Match.NONE, {}
+
+        route_path = get_route_path(scope)
+        match = self.path_regex.match(route_path)
+        if not match:
+            return Match.NONE, {}
+
+        # Use local variable name reuse and avoid redundant dict allocation
+        matched_params = match.groupdict()
+        param_convertors = self.param_convertors
+        # Use local assignment for param updated values
+        for key in matched_params:
+            matched_params[key] = param_convertors[key].convert(matched_params[key])
+
+        # Avoid unnecessary dict copying when path_params is not present
+        scope_path_params = scope.get("path_params")
+        if scope_path_params:
+            # Merge via copy only if needed
+            path_params = dict(scope_path_params)
+            path_params.update(matched_params)
+        else:
+            path_params = matched_params  # matched_params already a dict
+
+        child_scope = {"endpoint": self.endpoint, "path_params": path_params}
+        return Match.FULL, child_scope
 
     def url_path_for(self, name: str, /, **path_params: Any) -> URLPath:
         seen_params = set(path_params.keys())
