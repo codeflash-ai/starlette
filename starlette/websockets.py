@@ -36,25 +36,31 @@ class WebSocket(HTTPConnection):
         """
         Receive ASGI websocket messages, ensuring valid state transitions.
         """
+        # Fast-path: avoid extra checks and double await by minimizing branching
         if self.client_state == WebSocketState.CONNECTING:
             message = await self._receive()
             message_type = message["type"]
+            # Only handle the state transition after receiving
             if message_type != "websocket.connect":
                 raise RuntimeError(f'Expected ASGI message "websocket.connect", but got {message_type!r}')
             self.client_state = WebSocketState.CONNECTED
             return message
-        elif self.client_state == WebSocketState.CONNECTED:
+
+        if self.client_state == WebSocketState.CONNECTED:
             message = await self._receive()
             message_type = message["type"]
-            if message_type not in {"websocket.receive", "websocket.disconnect"}:
-                raise RuntimeError(
-                    f'Expected ASGI message "websocket.receive" or "websocket.disconnect", but got {message_type!r}'
-                )
+            # Only check for allowed types, then update state if needed
             if message_type == "websocket.disconnect":
                 self.client_state = WebSocketState.DISCONNECTED
-            return message
-        else:
-            raise RuntimeError('Cannot call "receive" once a disconnect message has been received.')
+                return message
+            if message_type == "websocket.receive":
+                return message
+            raise RuntimeError(
+                f'Expected ASGI message "websocket.receive" or "websocket.disconnect", but got {message_type!r}'
+            )
+
+        # DISCONNECTED or invalid state
+        raise RuntimeError('Cannot call "receive" once a disconnect message has been received.')
 
     async def send(self, message: Message) -> None:
         """
