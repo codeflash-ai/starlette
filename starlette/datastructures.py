@@ -163,7 +163,10 @@ class URL:
         return self.replace(query=query)
 
     def __eq__(self, other: Any) -> bool:
-        return str(self) == str(other)
+        # Avoid unnecessary str conversion if 'other' is already a URL instance
+        if isinstance(other, URL):
+            return self._url == other._url
+        return self._url == str(other)
 
     def __str__(self) -> str:
         return self._url
