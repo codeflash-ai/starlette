@@ -20,11 +20,14 @@ class HTTPEndpoint:
         self.scope = scope
         self.receive = receive
         self.send = send
+        # Precompute allowed methods string for optimal reuse
         self._allowed_methods = [
             method
             for method in ("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
             if getattr(self, method.lower(), None) is not None
         ]
+        self._allowed_methods_str = ", ".join(self._allowed_methods)
+        self._method_not_allowed_headers = {"Allow": self._allowed_methods_str}
 
     def __await__(self) -> Generator[Any, None, None]:
         return self.dispatch().__await__()
@@ -45,10 +48,10 @@ class HTTPEndpoint:
         # If we're running inside a starlette application then raise an
         # exception, so that the configurable exception handler can deal with
         # returning the response. For plain ASGI apps, just return the response.
-        headers = {"Allow": ", ".join(self._allowed_methods)}
         if "app" in self.scope:
-            raise HTTPException(status_code=405, headers=headers)
-        return PlainTextResponse("Method Not Allowed", status_code=405, headers=headers)
+            raise HTTPException(status_code=405, headers=self._method_not_allowed_headers)
+        # Reuse precomputed headers dictionary for efficiency
+        return PlainTextResponse("Method Not Allowed", status_code=405, headers=self._method_not_allowed_headers)
 
 
 class WebSocketEndpoint:
