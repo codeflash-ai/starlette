@@ -349,10 +349,16 @@ class MultiDict(ImmutableMultiDict[Any, Any]):
         self._list.clear()
 
     def setdefault(self, key: Any, default: Any = None) -> Any:
-        if key not in self:
-            self._dict[key] = default
+        # Try to access self._dict directly for improved lookup performance
+        # (preserving behavior since ImmutableMultiDict.__getitem__ and __contains__ both delegate to self._dict)
+        _dict = self._dict  # local variable lookup optimization
+
+        if key not in _dict:
+            _dict[key] = default
             self._list.append((key, default))
 
+        # Access dict directly for the return path to avoid double lookup
+        # (but must still support subclass overrides, so use self[key] as in original)
         return self[key]
 
     def setlist(self, key: Any, values: list[Any]) -> None:
@@ -638,11 +644,12 @@ class MutableHeaders(Headers):
         """
         set_key = key.lower().encode("latin-1")
         set_value = value.encode("latin-1")
+        header_list = self._list
 
-        for idx, (item_key, item_value) in enumerate(self._list):
+        for item_key, item_value in header_list:
             if item_key == set_key:
                 return item_value.decode("latin-1")
-        self._list.append((set_key, set_value))
+        header_list.append((set_key, set_value))
         return value
 
     def update(self, other: Mapping[str, str]) -> None:
