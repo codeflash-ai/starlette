@@ -24,6 +24,12 @@ class StringConvertor(Convertor[str]):
         return value
 
     def to_string(self, value: str) -> str:
+        # Fast path: if value is already a non-empty str without '/', return early
+        if isinstance(value, str):
+            assert "/" not in value, "May not contain path separators"
+            assert value, "Must not be empty"
+            return value
+        # Fallback: convert to str, then apply checks
         value = str(value)
         assert "/" not in value, "May not contain path separators"
         assert value, "Must not be empty"
