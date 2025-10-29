@@ -250,7 +250,9 @@ class CommaSeparatedStrings(Sequence[str]):
         return f"{class_name}({items!r})"
 
     def __str__(self) -> str:
-        return ", ".join(repr(item) for item in self)
+        # Optimization: minimize overhead of generator expression and repeated allocations.
+        # Use list comprehension for reprs for faster join.
+        return ", ".join([repr(item) for item in self._items])
 
 
 class ImmutableMultiDict(Mapping[_KeyType, _CovariantValueType]):
