@@ -206,4 +206,6 @@ def __getattr__(name: str) -> int:
 
 
 def __dir__() -> list[str]:
-    return sorted(list(__all__) + list(__deprecated__.keys()))  # pragma: no cover
+    result = [*__all__, *__deprecated__.keys()]
+    result.sort()
+    return result  # pragma: no cover
