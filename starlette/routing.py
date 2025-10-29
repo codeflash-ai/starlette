@@ -135,23 +135,28 @@ def compile_path(
     """
     is_host = not path.startswith("/")
 
-    path_regex = "^"
-    path_format = ""
+    path_regex_parts = ["^"]
+    path_format_parts = []
     duplicated_params = set()
 
     idx = 0
     param_convertors = {}
-    for match in PARAM_REGEX.finditer(path):
+    finditer = PARAM_REGEX.finditer  # Localize for faster attribute access
+    escape = re.escape
+
+    for match in finditer(path):
         param_name, convertor_type = match.groups("str")
         convertor_type = convertor_type.lstrip(":")
         assert convertor_type in CONVERTOR_TYPES, f"Unknown path convertor '{convertor_type}'"
         convertor = CONVERTOR_TYPES[convertor_type]
 
-        path_regex += re.escape(path[idx : match.start()])
-        path_regex += f"(?P<{param_name}>{convertor.regex})"
+        # Use parts lists for fast string concatenation
+        segment = path[idx : match.start()]
+        path_regex_parts.append(escape(segment))
+        path_regex_parts.append(f"(?P<{param_name}>{convertor.regex})")
 
-        path_format += path[idx : match.start()]
-        path_format += "{%s}" % param_name
+        path_format_parts.append(segment)
+        path_format_parts.append(f"{{{param_name}}}")
 
         if param_name in param_convertors:
             duplicated_params.add(param_name)
@@ -165,16 +170,19 @@ def compile_path(
         ending = "s" if len(duplicated_params) > 1 else ""
         raise ValueError(f"Duplicated param name{ending} {names} at path {path}")
 
+    remaining = path[idx:]
     if is_host:
         # Align with `Host.matches()` behavior, which ignores port.
-        hostname = path[idx:].split(":")[0]
-        path_regex += re.escape(hostname) + "$"
+        hostname = remaining.split(":")[0]
+        path_regex_parts.append(escape(hostname))
+        path_regex_parts.append("$")
     else:
-        path_regex += re.escape(path[idx:]) + "$"
+        path_regex_parts.append(escape(remaining))
+        path_regex_parts.append("$")
 
-    path_format += path[idx:]
+    path_format_parts.append(remaining)
 
-    return re.compile(path_regex), path_format, param_convertors
+    return re.compile("".join(path_regex_parts)), "".join(path_format_parts), param_convertors
 
 
 class BaseRoute:
