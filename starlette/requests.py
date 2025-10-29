@@ -50,6 +50,11 @@ def cookie_parser(cookie_string: str) -> dict[str, str]:
     on an outdated spec and will fail on lots of input we want to support
     """
     cookie_dict: dict[str, str] = {}
+    # Use local variables for tighter loop scope (minor perf improvement)
+    _unquote = http_cookies._unquote
+    strip = str.strip
+
+    # Avoid per-iteration function attribute lookup and method lookup
     for chunk in cookie_string.split(";"):
         if "=" in chunk:
             key, val = chunk.split("=", 1)
@@ -57,10 +62,10 @@ def cookie_parser(cookie_string: str) -> dict[str, str]:
             # Assume an empty name per
             # https://bugzilla.mozilla.org/show_bug.cgi?id=169091
             key, val = "", chunk
-        key, val = key.strip(), val.strip()
+        key = strip(key)
+        val = strip(val)
         if key or val:
-            # unquote using Python's algorithm.
-            cookie_dict[key] = http_cookies._unquote(val)
+            cookie_dict[key] = _unquote(val)
     return cookie_dict
 
 
