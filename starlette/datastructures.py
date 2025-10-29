@@ -349,11 +349,16 @@ class MultiDict(ImmutableMultiDict[Any, Any]):
         self._list.clear()
 
     def setdefault(self, key: Any, default: Any = None) -> Any:
-        if key not in self:
-            self._dict[key] = default
+        # Try to access self._dict directly for improved lookup performance
+        # (preserving behavior since ImmutableMultiDict.__getitem__ and __contains__ both delegate to self._dict)
+        _dict = self._dict  # local variable lookup optimization
+
+        if key not in _dict:
+            _dict[key] = default
             self._list.append((key, default))
 
-        return self[key]
+        # Access dict directly for the return path to avoid double lookup
+        return _dict[key]
 
     def setlist(self, key: Any, values: list[Any]) -> None:
         if not values:
