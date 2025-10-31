@@ -116,7 +116,6 @@ class URL:
         return self.scheme in ("https", "wss")
 
     def replace(self, **kwargs: Any) -> URL:
-        # No substantial optimization here; logic is intricate and allocation is minimal.
         if "username" in kwargs or "password" in kwargs or "hostname" in kwargs or "port" in kwargs:
             hostname = kwargs.pop("hostname", None)
             port = kwargs.pop("port", self.port)
@@ -155,7 +154,6 @@ class URL:
         return self.replace(query=query)
 
     def remove_query_params(self, keys: str | Sequence[str]) -> URL:
-        # Optimize: use set for faster membership tests if keys is sequence
         if isinstance(keys, str):
             keys = [keys]
         keys_set = set(keys)
@@ -303,7 +301,6 @@ class ImmutableMultiDict(Mapping[_KeyType, _CovariantValueType]):
         return self._dict.items()
 
     def multi_items(self) -> list[tuple[_KeyType, _CovariantValueType]]:
-        # direct return, nothing to optimize here
         return list(self._list)
 
     def __getitem__(self, key: _KeyType) -> _CovariantValueType:
