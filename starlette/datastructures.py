@@ -156,10 +156,14 @@ class URL:
     def remove_query_params(self, keys: str | Sequence[str]) -> URL:
         if isinstance(keys, str):
             keys = [keys]
-        params = MultiDict(parse_qsl(self.query, keep_blank_values=True))
-        for key in keys:
-            params.pop(key, None)
-        query = urlencode(params.multi_items())
+        keys_set = set(keys)
+        # MultiDict's pop does a list comprehension already; avoid repeated pops by filtering
+        params_items = [
+            item
+            for item in MultiDict(parse_qsl(self.query, keep_blank_values=True)).multi_items()
+            if item[0] not in keys_set
+        ]
+        query = urlencode(params_items)
         return self.replace(query=query)
 
     def __eq__(self, other: Any) -> bool:
